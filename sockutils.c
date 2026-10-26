@@ -1401,8 +1401,9 @@ int sock_bufferize(const void *data, int size, char *outbuf, int *offset, int to
  * \param errbuflen: length of the buffer that will contains the error. The error message cannot be
  * larger than 'errbuflen - 1' because the last char is reserved for the string terminator.
  *
- * \return the number of bytes read if everything is fine, '-1' if some errors occurred.
- * The error message is returned in the 'errbuf' variable.
+ * \return the number of bytes read if everything is fine, '-1' if some errors occurred,
+ * or, with SOCK_RECEIVEALL_NO and on UN*X, '-3' if the receive was interrupted by a
+ * signal.  The error message is returned in the 'errbuf' variable.
  */
 
 int sock_recv(PCAP_SOCKET sock, SSL *ssl _U_NOSSL_, void *buffer, size_t size,
@@ -1460,7 +1461,16 @@ int sock_recv(PCAP_SOCKET sock, SSL *ssl _U_NOSSL_, void *buffer, size_t size,
 		{
 #ifndef _WIN32
 			if (errno == EINTR)
+			{
+				/*
+				 * The callers that want all the data
+				 * don't handle an interrupted receive,
+				 * so keep receiving.
+				 */
+				if (flags & SOCK_RECEIVEALL_YES)
+					continue;
 				return -3;
+			}
 #endif
 			sock_geterrmsg(errbuf, errbuflen, "recv() failed");
 			return -1;
