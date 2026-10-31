@@ -142,6 +142,7 @@ pcapint_findalldevs_interfaces(pcap_if_list_t *devlistp, char *errbuf,
 	struct ifaddrs *ifap, *ifa;
 	struct sockaddr *addr, *netmask, *broadaddr, *dstaddr;
 	size_t addr_size, netmask_size, broadaddr_size, dstaddr_size;
+	struct sockaddr_storage netmask_padded;
 	int ret = 0;
 	char *p, *q;
 
@@ -217,6 +218,24 @@ pcapint_findalldevs_interfaces(pcap_if_list_t *devlistp, char *errbuf,
 			if (ifa->ifa_netmask != NULL) {
 				netmask = ifa->ifa_netmask;
 				netmask_size = SA_LEN(ifa->ifa_netmask);
+#ifdef SA_LEN
+				/*
+				 * On some platforms (such as OpenBSD), getifaddrs()
+				 * returns a truncated sockaddr for netmasks with
+				 * trailing zero bytes omitted. Zero-pad it up to
+				 * addr_size to avoid buffer over-reads when
+				 * consuming the full address structure.
+				 */
+				if (netmask_size < addr_size && addr_size <= sizeof(netmask_padded)) {
+					memset(&netmask_padded, 0, sizeof(netmask_padded));
+					memcpy(&netmask_padded, netmask, netmask_size);
+#ifdef HAVE_STRUCT_SOCKADDR_SA_LEN
+					((struct sockaddr *)&netmask_padded)->sa_len = (u_char)addr_size;
+#endif
+					netmask = (struct sockaddr *)&netmask_padded;
+					netmask_size = addr_size;
+				}
+#endif
 			} else {
 				netmask = NULL;
 				netmask_size = 0;
